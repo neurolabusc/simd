@@ -111,6 +111,8 @@ fma (memory alignment not forced): min/mean	85	93	ms
 
 Therefore, for these tests (and my experience) and for the current generation of compilers (early 2020), Clang does a better job of optimizing single-threaded code, but gcc handles multi-threaded code better.
 
+This program can also be compiled for ARM-based CPUs like the Apple [M1](https://github.com/neurolabusc/AppleSiliconForNeuroimaging) by targeting the 128-bit Neon instructions. The [sse2neon](https://github.com/DLTcollab/sse2neon) translations are used for intrinsic functions. To compile for ARM, run make `ARCH=arm`. Future ARM CPUs are expected to support Scalable Vector Extension (SVE) instructions, providing a comparison with SSE. 
+
 ## Links
 
 - [FastMath is an elegant vectorized library for Delphi](https://neslib.github.io/FastMath/) accelerates x86_64 and ARM and CPUs.
