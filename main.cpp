@@ -45,7 +45,7 @@ g++-9 -O3 -fopenmp -o tst main.cpp; ./tst
 #define kSSE 4 //128-bit SSE handles 4 32-bit floats per instruction
 #define kSSE64 2 //128-bit SSE handles 2 64-bit floats per instruction
 #define kAVX 8 //256-bit AVX handles 8 32-bit floats per instruction
-#define kAVX64 8 //256-bit AVX handles 4 64-bit floats per instruction
+#define kAVX64 4 //256-bit AVX handles 4 64-bit floats per instruction
 
 //number of voxels for test, based on HCP resting state  https://protocols.humanconnectome.org/HCP/3T/imaging-protocols.html
 #define kNVox 808704000 //= 104*90*72*1200;
