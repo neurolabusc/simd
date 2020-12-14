@@ -1,8 +1,9 @@
 # Regular use
 CFLAGS=-O3
-ARCH := amd64
 #machine architecture flags
-ifeq ($(ARCH),arm)
+UNAME_S := $(shell uname -m)
+ARCH := $(UNAME_S)
+ifeq ($(ARCH),arm64)
 	#make ARCH=arm
 	MFLAGS=-march=armv8-a+fp+simd+crypto+crc
 else

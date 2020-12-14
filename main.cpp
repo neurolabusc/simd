@@ -12,12 +12,17 @@ g++-9 -O3 -o tst main.cpp  -march=core-avx2; ./tst
 
 g++-9 -O3 -fopenmp -o tst main.cpp; ./tst
 
+//you can explicitly disable AVX, e.g. for x86-64 code for Rosetta2 which does not support AVX
+g++ -O3 -o tstX86 main.cpp  -target x86_64-apple-macos10.12 -DmyDisableAVX
+
  */
 #include <cmath> //sqrt()
 #include <stdio.h>
 #ifdef __x86_64__    
 	#include <immintrin.h>
-	#define myUseAVX
+	#ifndef myDisableAVX
+		#define myUseAVX
+	#endif
     // do x64 stuff   
 #else  
 	#include "sse2neon.h"
@@ -25,6 +30,7 @@ g++-9 -O3 -fopenmp -o tst main.cpp; ./tst
     // do arm stuff
 #endif 
 #include <time.h>
+#include <sys/time.h>
 #include <climits>
 #include <cstring>
 #if !defined (HAVE_POSIX_MEMALIGN) && !defined (_WIN32) && !defined (__APPLE__)
@@ -48,8 +54,7 @@ g++-9 -O3 -fopenmp -o tst main.cpp; ./tst
 #define kAVX64 4 //256-bit AVX handles 4 64-bit floats per instruction
 
 //number of voxels for test, based on HCP resting state  https://protocols.humanconnectome.org/HCP/3T/imaging-protocols.html
-#define kNVox 808704000 //= 104*90*72*1200;
-
+#define kNVox 104*90*72*400 //= 104*90*72*400;
 
 void fma(float *v, int64_t n, float slope1, float intercept1) {
 //fused multiply+add, out = in * slope + intercept
@@ -103,10 +108,14 @@ void fmaAVX(float *v, int64_t n, float slope1, float intercept1) {
 	}
 } //fma8*/
 
-long timediff(clock_t t1, clock_t t2) {
-    long elapsed;
-    elapsed = ((double)t2 - t1) / CLOCKS_PER_SEC * 1000;
-    return elapsed;
+double clockMsec() { //return milliseconds since midnight
+	struct timespec _t;
+	clock_gettime(CLOCK_MONOTONIC, &_t);
+	return _t.tv_sec*1000.0 + (_t.tv_nsec/1.0e6);
+}
+
+long timediff(double startTimeMsec, double endTimeMsec) {
+	return round(endTimeMsec - startTimeMsec);
 }
 
 void fmaSSE(float *v, int64_t n, float slope1, float intercept1) {
@@ -226,10 +235,10 @@ void conv_tst_i16(int reps) {
 	long sum = 0.0;
 	int reps1 = MAX(reps, 1);
 	for (int64_t i = 0; i < reps1; i++) {
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		i16_f32(v16,f, n, 0.1f, 10.0f);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	if (reps < 1) { //reps=0: warmup, do not report values 
 		_mm_free (v16);
@@ -241,10 +250,10 @@ void conv_tst_i16(int reps) {
 	mn = INT_MAX;
 	sum = 0.0;
 	for (int64_t i = 0; i < reps; i++) {
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		i16_f32sse(v16,f, n, 0.1f, 10.0f);
-		mn = MIN(mn, timediff(startTime, clock()));	
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));	
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("i16_f32sse: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	/*if (n < 32) {
@@ -269,10 +278,10 @@ void fma_tst(int reps) {
 	long sum = 0.0;
 	for (int64_t i = 0; i < reps; i++) {
 		memcpy(v, vin, n*sizeof(float));
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		fma(v, n, 1.0, 10.0);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("fma: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	//SSE
@@ -280,10 +289,10 @@ void fma_tst(int reps) {
 	sum = 0.0;
 	for (int64_t i = 0; i < reps; i++) {
 		memcpy(v, vin, n*sizeof(float));
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		fmaSSE(v, n, 1.0, 10.0);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("fmaSSE: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	//AVX
@@ -292,10 +301,10 @@ void fma_tst(int reps) {
 	#ifdef myUseAVX 	
 	for (int64_t i = 0; i < reps; i++) {
 		memcpy(v, vin, n*sizeof(float));
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		fmaAVX(v, n, 1.0, 10.0);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("fmaAVX: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	#endif
@@ -308,10 +317,10 @@ void fma_tst(int reps) {
 		float * vu = (float *)data;
 		for (int64_t i = 0; i < n; i++)
 			vu[i] = vin[i];
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		fma(vu, n, 1.0, 10.0);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 		free(data);
 	}
 	printf("fma (memory alignment not forced): min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
@@ -332,10 +341,10 @@ void sqrt_tst(int reps) {
 	long sum = 0.0;
 	for (int64_t i = 0; i < reps; i++) {
 		memcpy(v, vin, n*sizeof(float));
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		sqrtV(v, n);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("sqrt: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	//SSE
@@ -343,10 +352,10 @@ void sqrt_tst(int reps) {
 	sum = 0.0;
 	for (int64_t i = 0; i < reps; i++) {
 		memcpy(v, vin, n*sizeof(float));
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		sqrtSSE(v, n);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("sqrtSSE: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	//AVX
@@ -355,10 +364,10 @@ void sqrt_tst(int reps) {
 	sum = 0.0;	
 	for (int64_t i = 0; i < reps; i++) {
 		memcpy(v, vin, n*sizeof(float));
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		sqrtAVX(v, n);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("sqrtAVX: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	#endif
@@ -430,10 +439,10 @@ void sqrt64_tst(int reps) {
 	long sum = 0.0;
 	for (int64_t i = 0; i < reps; i++) {
 		memcpy(v, vin, n*sizeof(float));
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		sqrt64V(v, n);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("sqrt64: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	//SSE
@@ -442,10 +451,10 @@ void sqrt64_tst(int reps) {
 	sum = 0.0;
 	for (int64_t i = 0; i < reps; i++) {
 		memcpy(v, vin, n*sizeof(float));
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		sqrt64SSE(v, n);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("sqrt64SSE: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	#endif
@@ -455,15 +464,113 @@ void sqrt64_tst(int reps) {
 	sum = 0.0;	
 	for (int64_t i = 0; i < reps; i++) {
 		memcpy(v, vin, n*sizeof(float));
-		clock_t startTime = clock();
+		double startTime = clockMsec();
 		sqrt64AVX(v, n);
-		mn = MIN(mn, timediff(startTime, clock()));
-		sum += timediff(startTime, clock());
+		mn = MIN(mn, timediff(startTime, clockMsec()));
+		sum += timediff(startTime, clockMsec());
 	}
 	printf("sqrt64AVX: min/mean\t%ld\t%ld\tms\n", mn, sum/reps);
 	#endif
 	_mm_free (v);
 	_mm_free (vin);
+}
+
+double max64V(double *v, int64_t n) {
+	double ret = v[0];
+	for (int64_t i = 0; i < n; i++ ) {
+    	ret = fmax(ret, v[i]);
+		//NaN values are propagated, that is if at least one item is NaN, the corresponding max value will be NaN as well
+		//if (v[i] != v[i]) return NAN;		
+	}
+	return ret;
+}//max64V()
+
+double max64SSE(double *v, int64_t n) {
+	double max1 = v[0];
+	double * vin = v;
+	__m128d max2d = _mm_loadu_pd(vin);
+	for (int64_t i = 0; i <= (n-kSSE64); i+=kSSE64) {
+		#ifdef __x86_64__   
+		max2d = _mm_max_pd(max2d, _mm_loadu_pd(vin)); 
+		#else
+		max2d = vmaxq_f64(max2d, _mm_loadu_pd(vin));
+		#endif
+		vin += kSSE64;
+	}
+	double* max2 = (double *)_mm_malloc(kSSE64*sizeof(double), 64);
+	_mm_storeu_pd(max2, max2d);
+	max1 = fmax(max2[0], max2[1]); 
+	_mm_free (max2);
+	int tail = (n % kSSE64);
+	while (tail > 0) {
+		max1 = fmax(max1,v[n-tail]);
+		tail --;	
+	}	
+	return max1;
+
+}//max64SSE()
+
+#define kNVox_bench_finite_range 128 * 128 * 64 * 10 //nibabel benchmark bench_finite_range.py
+
+void max64_tst(int reps) {
+	int64_t n = kNVox_bench_finite_range;
+	double* v = (double *)_mm_malloc(n*sizeof(double), 64);
+	for (int64_t i = 0; i < n; i++)
+		v[i] = (double)rand()/RAND_MAX;
+	max64V(v, n); //for timing, ignore first run - get CPU in floating point mode
+	//SISD
+	long mn = INT_MAX;
+	long sum = 0.0;
+	double ret = 0.0;
+	for (int64_t i = 0; i < reps; i++) {
+		double startTime = clockMsec();
+		for (int repeat = 0; repeat < 100; repeat++)
+			ret = max64V(v, n);
+		long msec = timediff(startTime, clockMsec());
+		mn = MIN(mn, msec);
+		sum += msec;
+	}
+	printf("max64=%g: min/mean\t%ld\t%ld\tms\n", ret, mn, sum/reps);
+	//SSE
+	mn = INT_MAX;
+	sum = 0.0;
+	for (int64_t i = 0; i < reps; i++) {
+		double startTime = clockMsec();
+		for (int repeat = 0; repeat < 100; repeat++)
+			ret = max64SSE(v, n);
+		long msec = timediff(startTime, clockMsec());
+		mn = MIN(mn, msec);
+		sum += msec;
+	}
+	printf("max64SSE=%g: min/mean\t%ld\t%ld\tms\n", ret, mn, sum/reps);
+	//test NaNs
+	mn = INT_MAX;
+	sum = 0.0;
+	for (int64_t i = 0; i < n; i++)
+		if(i % 3 == 0)
+			v[i] = NAN;
+	for (int64_t i = 0; i < reps; i++) {
+		double startTime = clockMsec();
+		for (int repeat = 0; repeat < 100; repeat++)
+			ret = max64V(v, n);
+		long msec = timediff(startTime, clockMsec());
+		mn = MIN(mn, msec);
+		sum += msec;
+	}
+	printf("max64(NaN)=%g: min/mean\t%ld\t%ld\tms\n", ret, mn, sum/reps);
+	//SSE
+	mn = INT_MAX;
+	sum = 0.0;
+	for (int64_t i = 0; i < reps; i++) {
+		double startTime = clockMsec();
+		for (int repeat = 0; repeat < 100; repeat++)
+			ret = max64SSE(v, n);
+		long msec = timediff(startTime, clockMsec());
+		mn = MIN(mn, msec);
+		sum += msec;
+	}
+	printf("max64SSE(NaN)=%g: min/mean\t%ld\t%ld\tms\n", ret, mn, sum/reps);
+	_mm_free (v);
 }
 
 int main(int argc, char * argv[]) {
@@ -497,18 +604,20 @@ int main(int argc, char * argv[]) {
 	#if defined(_OPENMP) 
 	printf("Using %d threads...\n", nThread);
 	omp_set_num_threads(nThread);
-	#endif	
-	conv_tst_i16(0);
+	#endif
+	max64_tst(reps);	
+	conv_tst_i16(reps);
 	conv_tst_i16(reps);
 	sqrt_tst(reps);
 	sqrt64_tst(reps);
 	fma_tst(reps);
-	#if defined(_OPENMP) 
+	#if defined(_OPENMP)
 	if (nThread == 1) return 0;
 	printf("Using 1 thread...\n");
 	omp_set_num_threads(1);
 	conv_tst_i16(reps);
 	sqrt_tst(reps);
+	sqrt64_tst(reps);
 	fma_tst(reps);	
 	#endif	
 	return 0;
